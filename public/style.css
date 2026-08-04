@@ -777,16 +777,42 @@ body {
   }
   
   .main-layout {
-    grid-template-columns: 1fr;
-    height: auto;
-  }
-
-  .sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
     height: auto;
   }
 
   .chat-panel {
-    height: 600px;
+    order: 1;
+    height: 520px;
+  }
+
+  .sidebar {
+    order: 2;
+    height: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header {
+    padding: 12px 16px;
+  }
+
+  .logo-area h1 {
+    font-size: 1.05rem;
+  }
+
+  .chat-panel {
+    height: 480px;
+  }
+
+  .messages-container {
+    padding: 14px;
+  }
+
+  .input-panel {
+    padding: 12px 14px 14px;
   }
 }
 
@@ -910,9 +936,27 @@ body {
   background: rgba(255, 255, 255, 0.35);
 }
 
+.file-action-btn.danger {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fecaca;
+}
+
+.file-action-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+  color: white;
+}
+
 .file-action-btn i {
   width: 14px;
   height: 14px;
+}
+
+.progress-bar-container.cancelled {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.progress-bar-fill.cancelled {
+  background: var(--danger);
 }
 
 /* Drag and drop hover effect */
@@ -925,4 +969,3 @@ body {
   background-color: rgba(99, 102, 241, 0.05) !important;
   box-shadow: 0 0 16px var(--primary-glow) !important;
 }
-

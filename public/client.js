@@ -8,7 +8,7 @@ let port = 3000;
 const peerConnections = {};  // targetSocketId -> RTCPeerConnection
 const dataChannels = {};     // targetSocketId -> RTCDataChannel (for text)
 const fileChannels = {};     // targetSocketId -> RTCDataChannel (for files)
-const outgoingTransfers = {}; // fileId -> { file, peers: { peerId: { currentChunk, totalChunks } } }
+const outgoingTransfers = {}; // fileId -> { file, cancelled, readers, peers: { peerId: { currentChunk, totalChunks } } }
 const incomingFiles = {};     // peerId -> { fileId, name, size, type, totalChunks, receivedChunksCount, chunks: [] }
 const peerNames = {};        // targetSocketId -> friendly name
 const CHUNK_SIZE = 16384;    // 16KB WebRTC chunk size
@@ -54,15 +54,70 @@ const toast = document.getElementById('toast');
 
 // --- Helper Functions ---
 
-// Generate a random room ID
-function generateRandomRoomId(length = 6) {
-  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+// Default room ID and random room generator (2 digits)
+const DEFAULT_ROOM_ID = '88';
+
+function generateRandomRoomId() {
+  const min = 10;
+  const max = 99;
+  return Math.floor(Math.random() * (max - min + 1) + min).toString();
 }
+
+// Storage keys & limits for chat history
+const STORAGE_KEY_PREFIX = 'feiqiu_chat_history_';
+const MAX_HISTORY_ITEMS = 200;
+
+function getStorageKey() {
+  return STORAGE_KEY_PREFIX + (roomId || DEFAULT_ROOM_ID);
+}
+
+function saveMessageToStorage(msgObj) {
+  if (!roomId) return;
+  try {
+    const key = getStorageKey();
+    const history = JSON.parse(localStorage.getItem(key) || '[]');
+    history.push(msgObj);
+    if (history.length > MAX_HISTORY_ITEMS) {
+      history.shift();
+    }
+    localStorage.setItem(key, JSON.stringify(history));
+  } catch (e) {
+    console.error('Failed to save chat history to localStorage:', e);
+  }
+}
+
+function loadChatHistory() {
+  if (!roomId) return;
+  try {
+    const key = getStorageKey();
+    const history = JSON.parse(localStorage.getItem(key) || '[]');
+    if (history.length > 0) {
+      messagesList.innerHTML = '';
+      history.forEach(msg => {
+        if (msg.type === 'text') {
+          appendMessage(msg.text, msg.isSelf, msg.senderName, msg.time, false);
+        } else if (msg.type === 'file') {
+          appendFileBubble(msg.isSelf, msg.senderName, msg.fileId, msg.fileName, msg.fileSize, msg.fileType, msg.time, false, true);
+        }
+      });
+    }
+  } catch (e) {
+    console.error('Failed to load chat history from localStorage:', e);
+  }
+}
+
+function clearChatHistory() {
+  messagesList.innerHTML = '';
+  appendSystemMessage('聊天记录已清空');
+  if (roomId) {
+    try {
+      localStorage.removeItem(getStorageKey());
+    } catch (e) {
+      console.error('Failed to clear chat history from localStorage:', e);
+    }
+  }
+}
+
 
 // Show toast message
 function showToast(message, type = 'info') {
@@ -124,7 +179,8 @@ function getFormattedTime() {
 }
 
 // Append message to chat panel
-function appendMessage(text, isSelf, senderName, id = null) {
+function appendMessage(text, isSelf, senderName, timestamp = null, saveToCache = true) {
+  const timeStr = timestamp || getFormattedTime();
   // Check if system message needs removal (like "waiting for peers")
   const emptyMsg = messagesList.querySelector('.system-message');
   if (emptyMsg && messagesList.children.length === 1) {
@@ -136,7 +192,7 @@ function appendMessage(text, isSelf, senderName, id = null) {
   
   const info = document.createElement('div');
   info.className = 'message-info';
-  info.textContent = `${senderName} • ${getFormattedTime()}`;
+  info.textContent = `${senderName} • ${timeStr}`;
   
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
@@ -164,7 +220,19 @@ function appendMessage(text, isSelf, senderName, id = null) {
   
   // Scroll to bottom
   messagesList.scrollTop = messagesList.scrollHeight;
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+
+  if (saveToCache) {
+    saveMessageToStorage({
+      type: 'text',
+      text,
+      isSelf,
+      senderName,
+      time: timeStr
+    });
+  }
 }
 
 // Append a system message
@@ -179,10 +247,13 @@ function appendSystemMessage(text) {
 // Update room-related info
 function updateRoomURL() {
   const hash = window.location.hash;
-  if (!hash) {
-    // Generate a default hash if none exists
-    roomId = generateRandomRoomId();
-    window.location.hash = roomId;
+  if (!hash || hash === '#' || hash === '#default') {
+    roomId = DEFAULT_ROOM_ID;
+    if (history.replaceState) {
+      history.replaceState(null, '', '#' + roomId);
+    } else {
+      window.location.hash = roomId;
+    }
   } else {
     roomId = hash.substring(1);
   }
@@ -341,6 +412,10 @@ function setupDataChannel(peerId, dc) {
         
         // Append peer bubble
         appendFileBubble(false, peerNames[peerId] || `设备 ${peerId.substring(0, 4)}`, fileId, fileName, fileSize, fileType);
+
+        if (totalChunks === 0) {
+          triggerFileCompletion(peerId);
+        }
         
         // Reply file-ready to sender
         sendControlMessage(peerId, {
@@ -350,12 +425,16 @@ function setupDataChannel(peerId, dc) {
       } else if (data.type === 'file-ready') {
         const { fileId } = data;
         const transfer = outgoingTransfers[fileId];
-        if (transfer) {
+        if (transfer && !transfer.cancelled) {
           // Initialize progress record for this peer
-          transfer.peers[peerId] = { currentChunk: 0, totalChunks: Math.ceil(transfer.file.size / CHUNK_SIZE) };
+          if (!transfer.peers[peerId]) {
+            transfer.peers[peerId] = { currentChunk: 0, totalChunks: Math.ceil(transfer.file.size / CHUNK_SIZE) };
+          }
           // Start sending
           startFileSendingLoop(peerId, fileId, transfer.file);
         }
+      } else if (data.type === 'file-cancel') {
+        handleFileCancelMessage(peerId, data.fileId);
       }
     } catch (err) {
       console.error('Error receiving message:', err);
@@ -437,18 +516,25 @@ function handleFileSelect(file) {
   }
 
   const fileId = 'file-' + Math.random().toString(36).substring(2, 9);
+  const targetPeerIds = Object.keys(dataChannels).filter(peerId => dataChannels[peerId].readyState === 'open');
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+  const peers = {};
+  targetPeerIds.forEach(peerId => {
+    peers[peerId] = { currentChunk: 0, totalChunks };
+  });
 
   // Register in outgoingTransfers
   outgoingTransfers[fileId] = {
     file: file,
-    peers: {}
+    cancelled: false,
+    readers: {},
+    peers
   };
 
   // Append self bubble
   appendFileBubble(true, '我', fileId, file.name, file.size, file.type);
 
   // Send metadata to all peers
-  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
   const metadata = {
     type: 'file-metadata',
     fileId: fileId,
@@ -458,10 +544,8 @@ function handleFileSelect(file) {
     totalChunks: totalChunks
   };
 
-  Object.keys(dataChannels).forEach(peerId => {
-    if (dataChannels[peerId].readyState === 'open') {
-      sendControlMessage(peerId, metadata);
-    }
+  targetPeerIds.forEach(peerId => {
+    sendControlMessage(peerId, metadata);
   });
 }
 
@@ -470,12 +554,18 @@ function startFileSendingLoop(peerId, fileId, file) {
   const fc = fileChannels[peerId];
   if (!fc || fc.readyState !== 'open') return;
 
+  const transfer = outgoingTransfers[fileId];
+  if (!transfer || transfer.cancelled) return;
+
   const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
-  let currentChunk = 0;
+  let currentChunk = transfer.peers[peerId]?.currentChunk || 0;
   const threshold = 65536; // 64KB
   fc.bufferedAmountLowThreshold = threshold;
 
   function sendNext() {
+    const latestTransfer = outgoingTransfers[fileId];
+    if (!latestTransfer || latestTransfer.cancelled) return;
+
     // Check if channel is still open
     if (!fileChannels[peerId] || fileChannels[peerId].readyState !== 'open') return;
 
@@ -483,6 +573,8 @@ function startFileSendingLoop(peerId, fileId, file) {
       if (fc.bufferedAmount > threshold) {
         fc.onbufferedamountlow = () => {
           fc.onbufferedamountlow = null;
+          const latestTransfer = outgoingTransfers[fileId];
+          if (!latestTransfer || latestTransfer.cancelled) return;
           sendNext();
         };
         return;
@@ -493,7 +585,11 @@ function startFileSendingLoop(peerId, fileId, file) {
       const blob = file.slice(start, end);
 
       const reader = new FileReader();
+      transfer.readers[peerId] = reader;
       reader.onload = (e) => {
+        const latestTransfer = outgoingTransfers[fileId];
+        if (!latestTransfer || latestTransfer.cancelled) return;
+
         try {
           fc.send(e.target.result);
           currentChunk++;
@@ -501,6 +597,26 @@ function startFileSendingLoop(peerId, fileId, file) {
           sendNext();
         } catch (err) {
           console.error(`Error sending file chunk to ${peerId}:`, err);
+        } finally {
+          const activeTransfer = outgoingTransfers[fileId];
+          if (activeTransfer?.readers[peerId] === reader) {
+            delete activeTransfer.readers[peerId];
+          }
+        }
+      };
+      reader.onerror = () => {
+        const activeTransfer = outgoingTransfers[fileId];
+        if (activeTransfer?.readers[peerId] === reader) {
+          delete activeTransfer.readers[peerId];
+        }
+        if (!outgoingTransfers[fileId]?.cancelled) {
+          console.error(`Error reading file chunk for ${peerId}:`, reader.error);
+        }
+      };
+      reader.onabort = () => {
+        const activeTransfer = outgoingTransfers[fileId];
+        if (activeTransfer?.readers[peerId] === reader) {
+          delete activeTransfer.readers[peerId];
         }
       };
       reader.readAsArrayBuffer(blob);
@@ -535,7 +651,7 @@ function updateOutgoingProgress(fileId, peerId, currentChunk, totalChunks) {
     totalPeerChunks += peers[pId].totalChunks;
   });
 
-  const percentage = totalPeerChunks > 0 ? Math.round((sentPeerChunks / totalPeerChunks) * 100) : 0;
+  const percentage = totalPeerChunks > 0 ? Math.round((sentPeerChunks / totalPeerChunks) * 100) : 100;
 
   const progressFill = document.getElementById(`progress-fill-${fileId}`);
   const progressMeta = document.getElementById(`progress-meta-${fileId}`);
@@ -548,6 +664,8 @@ function updateOutgoingProgress(fileId, peerId, currentChunk, totalChunks) {
     const formattedSize = formatBytes(transfer.file.size);
     if (percentage === 100) {
       progressMeta.textContent = `${formattedSize} • 发送成功`;
+      finalizeFileTransferUI(fileId);
+      transfer.completed = true;
       
       // Hide progress container after a slight delay
       setTimeout(() => {
@@ -560,6 +678,80 @@ function updateOutgoingProgress(fileId, peerId, currentChunk, totalChunks) {
   }
 }
 
+// Cancel an outgoing file transfer and notify every target peer
+function cancelOutgoingTransfer(fileId) {
+  const transfer = outgoingTransfers[fileId];
+  if (!transfer || transfer.cancelled || transfer.completed) return;
+
+  transfer.cancelled = true;
+
+  Object.values(transfer.readers).forEach(reader => {
+    if (reader.readyState === FileReader.LOADING) {
+      try { reader.abort(); } catch (err) {}
+    }
+  });
+  transfer.readers = {};
+
+  Object.keys(transfer.peers).forEach(peerId => {
+    const fc = fileChannels[peerId];
+    if (fc) fc.onbufferedamountlow = null;
+    sendControlMessage(peerId, {
+      type: 'file-cancel',
+      fileId
+    });
+  });
+
+  markFileTransferCancelled(fileId, transfer.file.size, '已取消发送');
+  showToast('已取消文件发送', 'info');
+}
+
+// Handle transfer cancellation from the remote sender
+function handleFileCancelMessage(peerId, fileId) {
+  const incoming = incomingFiles[peerId];
+  if (incoming && incoming.fileId === fileId) {
+    const fileSize = incoming.size;
+    incoming.chunks = [];
+    incomingFiles[peerId] = { fileId, cancelled: true };
+    markFileTransferCancelled(fileId, fileSize, '对方已取消发送');
+    return;
+  }
+
+  const outgoing = outgoingTransfers[fileId];
+  if (outgoing?.peers[peerId]) {
+    outgoing.peers[peerId].cancelled = true;
+  }
+}
+
+function finalizeFileTransferUI(fileId) {
+  const actionsContainer = document.getElementById(`actions-${fileId}`);
+  if (actionsContainer) {
+    actionsContainer.innerHTML = '';
+  }
+}
+
+function markFileTransferCancelled(fileId, fileSize, statusText) {
+  const progressContainer = document.getElementById(`progress-container-${fileId}`);
+  const progressFill = document.getElementById(`progress-fill-${fileId}`);
+  const progressMeta = document.getElementById(`progress-meta-${fileId}`);
+  const actionsContainer = document.getElementById(`actions-${fileId}`);
+
+  if (progressFill) {
+    progressFill.classList.add('cancelled');
+  }
+
+  if (progressContainer) {
+    progressContainer.classList.add('cancelled');
+  }
+
+  if (progressMeta) {
+    progressMeta.textContent = `${formatBytes(fileSize)} • ${statusText}`;
+  }
+
+  if (actionsContainer) {
+    actionsContainer.innerHTML = '';
+  }
+}
+
 // Receive binary chunk from peer
 function handleIncomingFileChunk(peerId, arrayBuffer) {
   const fileTransfer = incomingFiles[peerId];
@@ -568,10 +760,16 @@ function handleIncomingFileChunk(peerId, arrayBuffer) {
     return;
   }
 
+  if (fileTransfer.cancelled) {
+    return;
+  }
+
   fileTransfer.chunks.push(arrayBuffer);
   fileTransfer.receivedChunksCount++;
 
-  const percentage = Math.round((fileTransfer.receivedChunksCount / fileTransfer.totalChunks) * 100);
+  const percentage = fileTransfer.totalChunks > 0
+    ? Math.round((fileTransfer.receivedChunksCount / fileTransfer.totalChunks) * 100)
+    : 100;
 
   const progressFill = document.getElementById(`progress-fill-${fileTransfer.fileId}`);
   const progressMeta = document.getElementById(`progress-meta-${fileTransfer.fileId}`);
@@ -628,7 +826,8 @@ function triggerFileCompletion(peerId) {
 }
 
 // Append file progress bubble to message panel
-function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileType) {
+function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileType, timestamp = null, saveToCache = true, isHistory = false) {
+  const timeStr = timestamp || getFormattedTime();
   const emptyMsg = messagesList.querySelector('.system-message');
   if (emptyMsg && messagesList.children.length === 1) {
     messagesList.removeChild(emptyMsg);
@@ -639,14 +838,14 @@ function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileTy
   
   const info = document.createElement('div');
   info.className = 'message-info';
-  info.textContent = `${senderName} • ${getFormattedTime()}`;
+  info.textContent = `${senderName} • ${timeStr}`;
   
   const bubble = document.createElement('div');
   bubble.className = 'message-bubble';
   
   // Decide icon based on file extension
   let iconName = 'file';
-  const ext = fileName.split('.').pop().toLowerCase();
+  const ext = fileName ? fileName.split('.').pop().toLowerCase() : '';
   if (['txt', 'md', 'pdf', 'doc', 'docx', 'xls', 'xlsx'].includes(ext)) {
     iconName = 'file-text';
   } else if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'].includes(ext)) {
@@ -662,6 +861,7 @@ function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileTy
   }
   
   const formattedSize = formatBytes(fileSize);
+  const statusText = isHistory ? `${formattedSize} • 历史文件记录` : (isSelf ? '正在发送 0%' : '正在接收 0%');
   
   bubble.innerHTML = `
     <div class="file-bubble-container" id="msg-${fileId}">
@@ -671,10 +871,10 @@ function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileTy
         </div>
         <div class="file-details">
           <div class="file-name" title="${fileName}">${fileName}</div>
-          <div class="file-meta-info" id="progress-meta-${fileId}">${formattedSize} • ${isSelf ? '正在发送 0%' : '正在接收 0%'}</div>
+          <div class="file-meta-info" id="progress-meta-${fileId}">${statusText}</div>
         </div>
       </div>
-      <div class="progress-bar-container" id="progress-container-${fileId}">
+      <div class="progress-bar-container" id="progress-container-${fileId}" style="${isHistory ? 'display: none;' : ''}">
         <div class="progress-bar-fill" id="progress-fill-${fileId}"></div>
       </div>
       <div class="file-actions" id="actions-${fileId}">
@@ -686,9 +886,34 @@ function appendFileBubble(isSelf, senderName, fileId, fileName, fileSize, fileTy
   wrapper.appendChild(info);
   wrapper.appendChild(bubble);
   messagesList.appendChild(wrapper);
+
+  if (isSelf && !isHistory) {
+    const actionsContainer = document.getElementById(`actions-${fileId}`);
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.className = 'file-action-btn danger';
+    cancelBtn.innerHTML = '<i data-lucide="x"></i>取消';
+    cancelBtn.onclick = () => cancelOutgoingTransfer(fileId);
+    actionsContainer.appendChild(cancelBtn);
+  }
   
   messagesList.scrollTop = messagesList.scrollHeight;
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+
+  if (saveToCache) {
+    saveMessageToStorage({
+      type: 'file',
+      fileId,
+      fileName,
+      fileSize,
+      fileType,
+      isSelf,
+      senderName,
+      time: timeStr
+    });
+  }
 }
 
 // Convert bytes to human readable format
@@ -917,8 +1142,7 @@ newRoomBtn.addEventListener('click', () => {
 
 // Clear Chat history
 clearChatBtn.addEventListener('click', () => {
-  messagesList.innerHTML = '';
-  appendSystemMessage('聊天记录已清空');
+  clearChatHistory();
 });
 
 // Listen to Hash Change to allow changing rooms on the fly
@@ -936,6 +1160,9 @@ myPeerIdDisplay.textContent = `设备 ${myDeviceId}`;
 
 // Initialize Room ID
 updateRoomURL();
+
+// Load chat history for current room
+loadChatHistory();
 
 // Fetch local Server details & IP (for QR & Direct LAN access info)
 fetchServerInfo();
