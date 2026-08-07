@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>飞秋 WebRTC - 局域网即时文本传输</title>
   <link rel="stylesheet" href="style.css">
   <!-- Google Fonts: Inter -->
@@ -29,12 +29,31 @@
           <span class="dot"></span>
           <span class="status-text">未连接</span>
         </span>
+        <div class="header-actions">
+          <button id="mobile-clear-btn" class="btn text-btn mobile-only-btn" title="清空记录">
+            <i data-lucide="trash-2"></i>
+            <span>清空</span>
+          </button>
+          <button id="mobile-info-btn" class="btn secondary mobile-only-btn" title="扫码与房间信息">
+            <i data-lucide="qr-code"></i>
+            <span>二维码</span>
+          </button>
+        </div>
       </div>
     </header>
 
     <div class="main-layout">
       <!-- Sidebar / Info Panel -->
       <aside class="sidebar card">
+        <div class="sidebar-mobile-header mobile-only-btn">
+          <div class="sidebar-mobile-title">
+            <i data-lucide="qr-code"></i>
+            <span>房间二维码与设置</span>
+          </div>
+          <button id="close-sidebar-btn" class="icon-btn" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
+        </div>
         <div class="section-title">
           <i data-lucide="share-2"></i>
           <h2>快速连接其他电脑</h2>

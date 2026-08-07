@@ -52,6 +52,19 @@ const sendBtn = document.getElementById('send-btn');
 const charCount = document.getElementById('char-count');
 const toast = document.getElementById('toast');
 
+function updateViewportHeight() {
+  const viewportHeight = window.visualViewport
+    ? window.visualViewport.height
+    : window.innerHeight;
+  document.documentElement.style.setProperty('--app-height', `${viewportHeight}px`);
+}
+
+updateViewportHeight();
+window.addEventListener('resize', updateViewportHeight);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', updateViewportHeight);
+}
+
 // --- Helper Functions ---
 
 // Default room ID and random room generator (2 digits)
@@ -1145,6 +1158,13 @@ clearChatBtn.addEventListener('click', () => {
   clearChatHistory();
 });
 
+const mobileClearBtn = document.getElementById('mobile-clear-btn');
+if (mobileClearBtn) {
+  mobileClearBtn.addEventListener('click', () => {
+    clearChatHistory();
+  });
+}
+
 // Listen to Hash Change to allow changing rooms on the fly
 window.addEventListener('hashchange', () => {
   window.location.reload();
@@ -1154,6 +1174,32 @@ window.addEventListener('hashchange', () => {
 if ("Notification" in window && Notification.permission === "default") {
   Notification.requestPermission();
 }
+
+// Mobile Sidebar Toggle
+const mobileInfoBtn = document.getElementById('mobile-info-btn');
+const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const sidebar = document.querySelector('.sidebar');
+
+if (mobileInfoBtn && sidebar) {
+  mobileInfoBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    sidebar.classList.toggle('mobile-active');
+  });
+}
+
+if (closeSidebarBtn && sidebar) {
+  closeSidebarBtn.addEventListener('click', () => {
+    sidebar.classList.remove('mobile-active');
+  });
+}
+
+document.addEventListener('click', (e) => {
+  if (sidebar && sidebar.classList.contains('mobile-active')) {
+    if (!sidebar.contains(e.target) && mobileInfoBtn && !mobileInfoBtn.contains(e.target)) {
+      sidebar.classList.remove('mobile-active');
+    }
+  }
+});
 
 // Display persistent device ID
 myPeerIdDisplay.textContent = `设备 ${myDeviceId}`;
