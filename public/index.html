@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>飞秋 - 局域网即时文本传输</title>
   <link rel="stylesheet" href="style.css">
   <!-- Google Fonts: Plus Jakarta Sans -->
@@ -73,7 +73,11 @@
         </section>
       </aside>
 
+      <div id="mobile-backdrop" class="mobile-backdrop"></div>
+
       <aside class="sidebar card">
+        <div class="mobile-drag-pill mobile-only-btn"></div>
+
         <div class="sidebar-mobile-header mobile-only-btn">
           <div class="sidebar-mobile-title">
             <i data-lucide="qr-code"></i>
@@ -84,71 +88,86 @@
           </button>
         </div>
 
-        <section class="info-card hero-card">
-          <div class="section-title compact">
-            <h2>连接信息</h2>
-          </div>
-
-          <div class="identity-row">
-            <div class="identity-main">
-              <div class="identity-icon">
-                <i data-lucide="monitor"></i>
-              </div>
-              <div>
-                <div class="identity-title"><span id="my-peer-id-display">获取中...</span> <span class="identity-note">(本机)</span></div>
-                <div class="identity-ip-line">
-                  <span id="local-ip-display">-</span>
-                </div>
-              </div>
-            </div>
-            <div class="online-pill">
-              <span class="dot"></span>
-              <span>在线</span>
-            </div>
-          </div>
-
-          <div class="stats-grid">
-            <div class="stat-item">
-              <div class="stat-value" id="peer-count">0 个设备</div>
-              <div class="stat-label">已连接设备</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-value code-font" id="room-id-display">default</div>
-              <div class="stat-label">当前房间</div>
-            </div>
-          </div>
-        </section>
-
-        <section class="info-card nearby-card">
-          <div class="section-title compact">
-            <h2>快速连接</h2>
-          </div>
-
-          <div class="qr-container">
-            <img id="qr-code-img" src="" alt="连接二维码" style="display: none;">
-            <div id="qr-placeholder" class="qr-placeholder">
-              <div class="spinner"></div>
-              <span>生成二维码中...</span>
-            </div>
-          </div>
-
-          <div class="link-copier">
-            <label for="lan-url">局域网访问地址</label>
-            <div class="input-group">
-              <input type="text" id="lan-url" readonly value="获取中...">
-              <button id="copy-url-btn" class="icon-btn" title="复制链接">
-                <i data-lucide="copy"></i>
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <div class="room-actions">
-          <button id="new-room-btn" class="btn secondary">
-            <i data-lucide="plus-circle"></i>
-            新建独立房间
+        <div class="mobile-modal-tabs mobile-only-btn">
+          <button id="mobile-tab-btn-qr" class="mobile-tab-btn active" type="button">
+            <i data-lucide="qr-code"></i>
+            <span>扫码与连接</span>
+          </button>
+          <button id="mobile-tab-btn-devices" class="mobile-tab-btn" type="button">
+            <i data-lucide="shield"></i>
+            <span>设备管理</span>
           </button>
         </div>
+
+        <div id="mobile-tab-content-qr" class="mobile-tab-content active">
+          <section class="info-card hero-card">
+            <div class="section-title compact">
+              <h2>连接信息</h2>
+            </div>
+
+            <div class="identity-row">
+              <div class="identity-main">
+                <div class="identity-icon">
+                  <i data-lucide="monitor"></i>
+                </div>
+                <div>
+                  <div class="identity-title"><span id="my-peer-id-display">获取中...</span> <span class="identity-note">(本机)</span></div>
+                  <div class="identity-ip-line">
+                    <span id="local-ip-display">-</span>
+                  </div>
+                </div>
+              </div>
+              <div class="online-pill">
+                <span class="dot"></span>
+                <span>在线</span>
+              </div>
+            </div>
+
+            <div class="stats-grid">
+              <div class="stat-item">
+                <div class="stat-value" id="peer-count">0 个设备</div>
+                <div class="stat-label">已连接设备</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-value code-font" id="room-id-display">default</div>
+                <div class="stat-label">当前房间</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="info-card nearby-card">
+            <div class="section-title compact">
+              <h2>快速连接</h2>
+            </div>
+
+            <div class="qr-container">
+              <img id="qr-code-img" src="" alt="连接二维码" style="display: none;">
+              <div id="qr-placeholder" class="qr-placeholder">
+                <div class="spinner"></div>
+                <span>生成二维码中...</span>
+              </div>
+            </div>
+
+            <div class="link-copier">
+              <label for="lan-url">局域网访问地址</label>
+              <div class="input-group">
+                <input type="text" id="lan-url" readonly value="获取中...">
+                <button id="copy-url-btn" class="icon-btn" title="复制链接">
+                  <i data-lucide="copy"></i>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <div class="room-actions">
+            <button id="new-room-btn" class="btn secondary">
+              <i data-lucide="plus-circle"></i>
+              新建独立房间
+            </button>
+          </div>
+        </div>
+
+        <div id="mobile-tab-content-devices" class="mobile-tab-content" style="display: none;"></div>
       </aside>
 
       <main class="chat-panel card">
