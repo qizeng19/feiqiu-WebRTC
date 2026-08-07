@@ -145,6 +145,18 @@ export function initEventListeners() {
     charCount.textContent = `${textInput.value.length} 字符`;
   });
 
+  textInput.addEventListener('focus', () => {
+    setTimeout(() => {
+      window.scrollTo(0, 0);
+      document.body.scrollTop = 0;
+    }, 50);
+  });
+
+  textInput.addEventListener('blur', () => {
+    window.scrollTo(0, 0);
+    document.body.scrollTop = 0;
+  });
+
   textInput.addEventListener('keydown', event => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();

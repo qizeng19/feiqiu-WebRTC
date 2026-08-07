@@ -1080,10 +1080,28 @@ body {
     display: none !important;
   }
 
+  :root {
+    --app-height: 100dvh;
+  }
+
+  html,
+  body {
+    position: fixed;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
   .app-container {
-    height: var(--app-height);
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
     padding: 0;
     gap: 0;
+    overflow: hidden;
   }
 
   .app-header {
@@ -1099,6 +1117,7 @@ body {
     justify-content: space-between;
     gap: 8px;
     width: 100%;
+    flex-shrink: 0;
   }
 
   .logo-area {
@@ -1168,19 +1187,23 @@ body {
     display: block;
     flex: 1;
     min-height: 0;
+    height: calc(100dvh - var(--mobile-header-height));
   }
 
   .chat-panel {
-    height: calc(var(--app-height) - var(--mobile-header-height));
+    height: 100%;
     border: none;
     border-radius: 0;
     box-shadow: none;
     background: transparent;
+    display: flex;
+    flex-direction: column;
   }
 
   .chat-header {
     padding: 14px 16px 10px;
     background: transparent;
+    flex-shrink: 0;
   }
 
   .chat-title h2 {
@@ -1194,6 +1217,9 @@ body {
   .messages-container {
     padding: 14px;
     gap: 12px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
   }
 
   .message-wrapper {
@@ -1209,6 +1235,7 @@ body {
     padding: 10px 14px 12px;
     padding-bottom: max(14px, env(safe-area-inset-bottom, 14px));
     background: rgba(255, 255, 255, 0.96);
+    flex-shrink: 0;
   }
 
   .input-wrapper {
@@ -1217,7 +1244,7 @@ body {
   }
 
   .input-wrapper textarea {
-    font-size: 0.9rem;
+    font-size: 16px !important;
     max-height: 92px;
   }
 
