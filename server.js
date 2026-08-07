@@ -13,6 +13,7 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3004;
+const roomStates = new Map();
 
 // Serve static files from the "public" directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -41,14 +42,113 @@ app.get('/api/info', (req, res) => {
   });
 });
 
+function getOrCreateRoomState(roomId) {
+  if (!roomStates.has(roomId)) {
+    roomStates.set(roomId, {
+      ownerSocketId: null,
+      blockedDeviceIds: new Set()
+    });
+  }
+  return roomStates.get(roomId);
+}
+
+function getRoomMembers(roomId) {
+  const clients = io.sockets.adapter.rooms.get(roomId);
+  const members = [];
+
+  if (!clients) {
+    return members;
+  }
+
+  for (const clientId of clients) {
+    const clientSocket = io.sockets.sockets.get(clientId);
+    if (!clientSocket) {
+      continue;
+    }
+    members.push({
+      socketId: clientSocket.id,
+      deviceId: clientSocket.deviceId || clientSocket.id.substring(0, 4)
+    });
+  }
+
+  return members;
+}
+
+function syncRoomOwner(roomId) {
+  const state = roomStates.get(roomId);
+  if (!state) {
+    return null;
+  }
+
+  const members = getRoomMembers(roomId);
+  const ownerStillPresent = members.some(member => member.socketId === state.ownerSocketId);
+
+  if (!ownerStillPresent) {
+    state.ownerSocketId = members[0] ? members[0].socketId : null;
+  }
+
+  return state.ownerSocketId;
+}
+
+function emitRoomState(roomId) {
+  const state = roomStates.get(roomId);
+  if (!state) {
+    return;
+  }
+
+  const members = getRoomMembers(roomId);
+  if (members.length === 0) {
+    roomStates.delete(roomId);
+    return;
+  }
+
+  syncRoomOwner(roomId);
+
+  io.to(roomId).emit('room-state', {
+    roomId,
+    ownerSocketId: state.ownerSocketId,
+    members,
+    blockedDeviceIds: Array.from(state.blockedDeviceIds)
+  });
+}
+
+function removeSocketFromRoom(targetSocket, roomId, reason) {
+  if (!targetSocket || targetSocket.currentRoom !== roomId) {
+    return;
+  }
+
+  targetSocket.emit('removed-from-room', {
+    roomId,
+    reason
+  });
+  targetSocket.leave(roomId);
+  targetSocket.currentRoom = null;
+
+  targetSocket.to(roomId).emit('peer-left', { peerId: targetSocket.id });
+  syncRoomOwner(roomId);
+  emitRoomState(roomId);
+}
+
 // Socket.io signaling
 io.on('connection', (socket) => {
-  let currentRoom = null;
-
   socket.on('join', ({ roomId, deviceId }) => {
-    currentRoom = roomId;
     socket.deviceId = deviceId || socket.id.substring(0, 4);
+    const state = getOrCreateRoomState(roomId);
+
+    if (state.blockedDeviceIds.has(socket.deviceId)) {
+      socket.emit('join-denied', {
+        roomId,
+        reason: 'blocked'
+      });
+      return;
+    }
+
+    socket.currentRoom = roomId;
     socket.join(roomId);
+
+    if (!state.ownerSocketId) {
+      state.ownerSocketId = socket.id;
+    }
 
     // Get all clients in this room (excluding the current one)
     const clients = io.sockets.adapter.rooms.get(roomId);
@@ -70,9 +170,15 @@ io.on('connection', (socket) => {
 
     // Tell existing peers about the new user
     socket.to(roomId).emit('peer-joined', { peerId: socket.id, deviceId: socket.deviceId });
+    emitRoomState(roomId);
   });
 
   socket.on('signal', ({ targetId, signal }) => {
+    const targetSocket = io.sockets.sockets.get(targetId);
+    if (!socket.currentRoom || !targetSocket || targetSocket.currentRoom !== socket.currentRoom) {
+      return;
+    }
+
     // Forward signaling data (offer, answer, candidate) to the target peer
     io.to(targetId).emit('signal', {
       senderId: socket.id,
@@ -80,9 +186,55 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('room-action', ({ action, targetSocketId, targetDeviceId }) => {
+    const roomId = socket.currentRoom;
+    if (!roomId) {
+      return;
+    }
+
+    const state = roomStates.get(roomId);
+    if (!state || state.ownerSocketId !== socket.id) {
+      socket.emit('room-action-error', {
+        message: '只有房主可以执行此操作'
+      });
+      return;
+    }
+
+    if (action === 'unblock') {
+      if (!targetDeviceId) {
+        return;
+      }
+      state.blockedDeviceIds.delete(targetDeviceId);
+      emitRoomState(roomId);
+      return;
+    }
+
+    const targetSocket = io.sockets.sockets.get(targetSocketId);
+    if (!targetSocket || targetSocket.currentRoom !== roomId || targetSocket.id === socket.id) {
+      socket.emit('room-action-error', {
+        message: '目标成员不存在或无法操作'
+      });
+      return;
+    }
+
+    if (action === 'kick') {
+      removeSocketFromRoom(targetSocket, roomId, 'kicked');
+      return;
+    }
+
+    if (action === 'block') {
+      state.blockedDeviceIds.add(targetSocket.deviceId || targetSocket.id.substring(0, 4));
+      removeSocketFromRoom(targetSocket, roomId, 'blocked');
+    }
+  });
+
   socket.on('disconnect', () => {
-    if (currentRoom) {
-      socket.to(currentRoom).emit('peer-left', { peerId: socket.id });
+    if (socket.currentRoom) {
+      const roomId = socket.currentRoom;
+      socket.to(roomId).emit('peer-left', { peerId: socket.id });
+      socket.currentRoom = null;
+      syncRoomOwner(roomId);
+      emitRoomState(roomId);
     }
   });
 });

@@ -12,6 +12,10 @@ const outgoingTransfers = {}; // fileId -> { file, cancelled, readers, peers: { 
 const incomingFiles = {};     // peerId -> { fileId, name, size, type, totalChunks, receivedChunksCount, chunks: [] }
 const peerNames = {};        // targetSocketId -> friendly name
 const CHUNK_SIZE = 16384;    // 16KB WebRTC chunk size
+let roomMembers = [];
+let blockedDeviceIds = [];
+let roomOwnerSocketId = null;
+let roomAccessMessage = '';
 
 // Get or create persistent device ID
 let myDeviceId = localStorage.getItem('feiqiu_device_id');
@@ -51,6 +55,23 @@ const textInput = document.getElementById('text-input');
 const sendBtn = document.getElementById('send-btn');
 const charCount = document.getElementById('char-count');
 const toast = document.getElementById('toast');
+const roomRoleBadge = document.getElementById('room-role-badge');
+const roomRoleHint = document.getElementById('room-role-hint');
+const roomMembersList = document.getElementById('room-members-list');
+const blockedMembersList = document.getElementById('blocked-members-list');
+const defaultInputPlaceholder = textInput.placeholder;
+
+if ('scrollRestoration' in history) {
+  history.scrollRestoration = 'manual';
+}
+
+function resetViewportScroll() {
+  window.scrollTo(0, 0);
+  document.documentElement.scrollTop = 0;
+  document.body.scrollTop = 0;
+}
+
+resetViewportScroll();
 
 function updateViewportHeight() {
   const viewportHeight = window.visualViewport
@@ -60,6 +81,8 @@ function updateViewportHeight() {
 }
 
 updateViewportHeight();
+window.addEventListener('load', resetViewportScroll);
+window.addEventListener('pageshow', resetViewportScroll);
 window.addEventListener('resize', updateViewportHeight);
 if (window.visualViewport) {
   window.visualViewport.addEventListener('resize', updateViewportHeight);
@@ -274,10 +297,177 @@ function updateRoomURL() {
   roomIdDisplay.textContent = roomId;
 }
 
+function isRoomOwner() {
+  return Boolean(socket && socket.id && roomOwnerSocketId === socket.id);
+}
+
+function setComposerDisabled(disabled, placeholderText = defaultInputPlaceholder) {
+  textInput.disabled = disabled;
+  textInput.placeholder = placeholderText;
+  if (attachBtn) {
+    attachBtn.disabled = disabled;
+  }
+  if (fileInput) {
+    fileInput.disabled = disabled;
+  }
+}
+
+function sendRoomAction(payload) {
+  if (!socket || !socket.connected) {
+    showToast('信令服务未连接，无法执行该操作', 'error');
+    return;
+  }
+  socket.emit('room-action', payload);
+}
+
+function setPeerDisplayName(peerId, deviceId) {
+  if (!peerId) {
+    return;
+  }
+  peerNames[peerId] = `设备 ${deviceId || peerId.substring(0, 4)}`;
+}
+
+function createActionButton(label, icon, type, onClick) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = `member-action-btn${type ? ` ${type}` : ''}`;
+  button.innerHTML = `<i data-lucide="${icon}"></i>${label}`;
+  button.addEventListener('click', onClick);
+  return button;
+}
+
+function renderRoomManagementPanel() {
+  const ownerMode = isRoomOwner();
+  roomRoleBadge.textContent = ownerMode ? '当前房主' : '普通成员';
+  roomRoleBadge.className = `role-badge${ownerMode ? ' owner' : ''}`;
+  roomRoleHint.textContent = ownerMode
+    ? '你可以将成员踢出当前房间，或加入屏蔽名单后再恢复。'
+    : '当前房间的第一个进入者为房主，只有房主可以管理成员。';
+
+  roomMembersList.innerHTML = '';
+  if (roomMembers.length === 0) {
+    roomMembersList.innerHTML = '<div class="member-empty">等待成员加入...</div>';
+  } else {
+    roomMembers.forEach(member => {
+      const item = document.createElement('div');
+      item.className = 'member-item';
+
+      const meta = document.createElement('div');
+      meta.className = 'member-meta';
+
+      const name = document.createElement('div');
+      name.className = 'member-name';
+      const labels = [];
+      if (member.socketId === roomOwnerSocketId) {
+        labels.push('房主');
+      }
+      if (socket && member.socketId === socket.id) {
+        labels.push('我');
+      }
+      name.textContent = `设备 ${member.deviceId}${labels.length ? ` · ${labels.join(' / ')}` : ''}`;
+
+      const desc = document.createElement('div');
+      desc.className = 'member-desc';
+      desc.textContent = member.socketId === roomOwnerSocketId ? '当前房主' : '在线成员';
+      if (socket && member.socketId === socket.id) {
+        desc.textContent += ' · 当前设备';
+      }
+
+      meta.appendChild(name);
+      meta.appendChild(desc);
+      item.appendChild(meta);
+
+      if (ownerMode && socket && member.socketId !== socket.id) {
+        const actions = document.createElement('div');
+        actions.className = 'member-actions';
+        actions.appendChild(createActionButton('踢出', 'log-out', 'warn', () => {
+          sendRoomAction({
+            action: 'kick',
+            targetSocketId: member.socketId
+          });
+        }));
+        actions.appendChild(createActionButton('屏蔽', 'ban', 'danger', () => {
+          sendRoomAction({
+            action: 'block',
+            targetSocketId: member.socketId
+          });
+        }));
+        item.appendChild(actions);
+      }
+
+      roomMembersList.appendChild(item);
+    });
+  }
+
+  blockedMembersList.innerHTML = '';
+  if (blockedDeviceIds.length === 0) {
+    blockedMembersList.innerHTML = '<div class="member-empty">暂无屏蔽成员</div>';
+  } else {
+    blockedDeviceIds.forEach(deviceId => {
+      const item = document.createElement('div');
+      item.className = 'member-item blocked';
+
+      const meta = document.createElement('div');
+      meta.className = 'member-meta';
+
+      const name = document.createElement('div');
+      name.className = 'member-name';
+      name.textContent = `设备 ${deviceId}`;
+
+      const desc = document.createElement('div');
+      desc.className = 'member-desc';
+      desc.textContent = '已被房主屏蔽';
+
+      meta.appendChild(name);
+      meta.appendChild(desc);
+      item.appendChild(meta);
+
+      if (ownerMode) {
+        const actions = document.createElement('div');
+        actions.className = 'member-actions';
+        actions.appendChild(createActionButton('恢复', 'rotate-ccw', '', () => {
+          sendRoomAction({
+            action: 'unblock',
+            targetDeviceId: deviceId
+          });
+        }));
+        item.appendChild(actions);
+      }
+
+      blockedMembersList.appendChild(item);
+    });
+  }
+
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
+}
+
+function leaveCurrentRoomState(message) {
+  roomAccessMessage = message;
+  roomMembers = [];
+  blockedDeviceIds = [];
+  roomOwnerSocketId = null;
+  setComposerDisabled(true, message);
+  renderRoomManagementPanel();
+  Object.keys(peerConnections).forEach(cleanupPeer);
+  updateConnectionUI();
+}
+
 // Set up UI updates based on WebRTC connections
 function updateConnectionUI() {
   const peersCount = Object.keys(dataChannels).filter(id => dataChannels[id].readyState === 'open').length;
   peerCountDisplay.textContent = `${peersCount} 个设备`;
+
+  if (roomAccessMessage) {
+    statusIndicator.className = 'status-indicator disconnected';
+    statusText.textContent = roomAccessMessage;
+    sendBtn.disabled = true;
+    setComposerDisabled(true, roomAccessMessage);
+    return;
+  }
+
+  setComposerDisabled(false);
 
   if (peersCount > 0) {
     statusIndicator.className = 'status-indicator connected';
@@ -340,8 +530,10 @@ function createPeerConnection(peerId, isInitiator) {
   const pc = new RTCPeerConnection(rtcConfig);
   peerConnections[peerId] = pc;
   
-  // Set up friendly name
-  peerNames[peerId] = `设备 ${peerId.substring(0, 4)}`;
+  // Preserve server-provided deviceId; only use socket id prefix as fallback.
+  if (!peerNames[peerId]) {
+    setPeerDisplayName(peerId);
+  }
 
   // ICE Candidates exchange
   pc.onicecandidate = (event) => {
@@ -479,7 +671,7 @@ function cleanupPeer(peerId) {
   if (incomingFiles[peerId]) {
     delete incomingFiles[peerId];
   }
-  
+
   updateConnectionUI();
 }
 
@@ -978,7 +1170,10 @@ function connectSignaling() {
 
   socket.on('connect', () => {
     console.log('Connected to signaling server');
-    socket.emit('join', { roomId, deviceId: myDeviceId });
+    if (!roomAccessMessage) {
+      socket.emit('join', { roomId, deviceId: myDeviceId });
+    }
+    renderRoomManagementPanel();
     updateConnectionUI();
   });
 
@@ -986,7 +1181,20 @@ function connectSignaling() {
     console.log('Disconnected from signaling server');
     // Cleanup all peers since connection lost
     Object.keys(peerConnections).forEach(cleanupPeer);
+    renderRoomManagementPanel();
     updateConnectionUI();
+  });
+
+  socket.on('join-denied', ({ reason }) => {
+    if (reason === 'blocked') {
+      leaveCurrentRoomState('你已被房主屏蔽');
+      appendSystemMessage('你已被房主屏蔽，当前无法加入该房间');
+      showToast('你已被房主屏蔽', 'error');
+      return;
+    }
+
+    leaveCurrentRoomState('无法加入当前房间');
+    appendSystemMessage('无法加入当前房间');
   });
 
   // Get initial list of peers in the room
@@ -994,7 +1202,7 @@ function connectSignaling() {
     console.log('Received list of existing peers:', peers);
     // As the new joiner, we will initiate WebRTC connections to everyone
     peers.forEach(peer => {
-      peerNames[peer.socketId] = `设备 ${peer.deviceId}`;
+      setPeerDisplayName(peer.socketId, peer.deviceId);
       startNegotiation(peer.socketId);
     });
   });
@@ -1002,7 +1210,7 @@ function connectSignaling() {
   // Peer joined the room
   socket.on('peer-joined', ({ peerId, deviceId }) => {
     console.log(`Peer joined: ${peerId} (${deviceId})`);
-    peerNames[peerId] = `设备 ${deviceId}`;
+    setPeerDisplayName(peerId, deviceId);
     // The existing client waits for the new client to negotiate, 
     // or creates the receiver connection.
     createPeerConnection(peerId, false);
@@ -1040,6 +1248,43 @@ function connectSignaling() {
   socket.on('peer-left', ({ peerId }) => {
     console.log(`Peer left: ${peerId}`);
     cleanupPeer(peerId);
+  });
+
+  socket.on('room-state', ({ ownerSocketId, members, blockedDeviceIds: nextBlockedDeviceIds }) => {
+    const previousOwnerSocketId = roomOwnerSocketId;
+    roomOwnerSocketId = ownerSocketId;
+    roomMembers = members || [];
+    blockedDeviceIds = nextBlockedDeviceIds || [];
+    roomMembers.forEach(member => {
+      setPeerDisplayName(member.socketId, member.deviceId);
+    });
+    renderRoomManagementPanel();
+
+    if (previousOwnerSocketId && previousOwnerSocketId !== ownerSocketId) {
+      const nextOwner = roomMembers.find(member => member.socketId === ownerSocketId);
+      if (socket && ownerSocketId === socket.id) {
+        appendSystemMessage('你现在是当前房间的房主');
+      } else if (nextOwner) {
+        appendSystemMessage(`当前房主已切换为设备 ${nextOwner.deviceId}`);
+      }
+    }
+  });
+
+  socket.on('removed-from-room', ({ reason }) => {
+    if (reason === 'blocked') {
+      leaveCurrentRoomState('你已被房主屏蔽');
+      appendSystemMessage('你已被房主屏蔽，并移出了当前房间');
+      showToast('你已被房主屏蔽', 'error');
+      return;
+    }
+
+    leaveCurrentRoomState('你已被房主移出');
+    appendSystemMessage('你已被房主移出当前房间，可刷新后重新加入');
+    showToast('你已被房主移出当前房间', 'info');
+  });
+
+  socket.on('room-action-error', ({ message }) => {
+    showToast(message || '房间操作失败', 'error');
   });
 }
 
@@ -1174,6 +1419,8 @@ window.addEventListener('hashchange', () => {
 if ("Notification" in window && Notification.permission === "default") {
   Notification.requestPermission();
 }
+
+renderRoomManagementPanel();
 
 // Mobile Sidebar Toggle
 const mobileInfoBtn = document.getElementById('mobile-info-btn');

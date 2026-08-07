@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>飞秋 WebRTC - 局域网即时文本传输</title>
   <link rel="stylesheet" href="style.css">
   <!-- Google Fonts: Inter -->
@@ -95,6 +95,31 @@
           <div class="info-row">
             <span class="label">连接数:</span>
             <span class="value font-bold" id="peer-count">0 个设备</span>
+          </div>
+        </div>
+
+        <div class="moderation-panel">
+          <div class="section-title">
+            <i data-lucide="shield"></i>
+            <h2>房间管理</h2>
+          </div>
+          <div class="moderation-summary">
+            <span class="role-badge" id="room-role-badge">普通成员</span>
+            <p id="room-role-hint">首个进入房间的设备会自动成为房主，可管理其他成员。</p>
+          </div>
+
+          <div class="moderation-group">
+            <div class="moderation-group-title">当前成员</div>
+            <div id="room-members-list" class="member-list">
+              <div class="member-empty">等待成员加入...</div>
+            </div>
+          </div>
+
+          <div class="moderation-group">
+            <div class="moderation-group-title">屏蔽名单</div>
+            <div id="blocked-members-list" class="member-list">
+              <div class="member-empty">暂无屏蔽成员</div>
+            </div>
           </div>
         </div>
 
