@@ -1,4 +1,4 @@
-import { myPeerIdDisplay } from './dom.js';
+import { myPeerIdDisplay, navDeviceId, navDeviceIdInline } from './dom.js';
 import { initEventListeners } from './events.js';
 import { connectSignaling } from './signaling.js';
 import { appState } from './state.js';
@@ -13,7 +13,13 @@ if ('Notification' in window && Notification.permission === 'default') {
   Notification.requestPermission();
 }
 
-myPeerIdDisplay.textContent = `设备 ${appState.myDeviceId}`;
+myPeerIdDisplay.textContent = appState.myDeviceId;
+if (navDeviceId) {
+  navDeviceId.textContent = appState.myDeviceId;
+}
+if (navDeviceIdInline) {
+  navDeviceIdInline.textContent = appState.myDeviceId;
+}
 updateRoomURL();
 loadChatHistory();
 renderRoomManagementPanel();

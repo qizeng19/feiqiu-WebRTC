@@ -1,5 +1,6 @@
 export const statusIndicator = document.getElementById('connection-status');
 export const statusText = statusIndicator.querySelector('.status-text');
+export const navRail = document.querySelector('.nav-rail');
 export const qrCodeImg = document.getElementById('qr-code-img');
 export const qrPlaceholder = document.getElementById('qr-placeholder');
 export const lanUrlInput = document.getElementById('lan-url');
@@ -19,6 +20,9 @@ export const roomRoleBadge = document.getElementById('room-role-badge');
 export const roomRoleHint = document.getElementById('room-role-hint');
 export const roomMembersList = document.getElementById('room-members-list');
 export const blockedMembersList = document.getElementById('blocked-members-list');
+export const navDeviceId = document.getElementById('nav-device-id');
+export const navDeviceIdInline = document.getElementById('nav-device-id-inline');
+export const navDeviceIp = document.getElementById('nav-device-ip');
 export const attachBtn = document.getElementById('attach-btn');
 export const fileInput = document.getElementById('file-input');
 export const chatPanel = document.querySelector('.chat-panel');

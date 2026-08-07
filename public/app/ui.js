@@ -9,6 +9,7 @@ import {
   lanUrlInput,
   localIpDisplay,
   messagesList,
+  navDeviceIp,
   peerCountDisplay,
   qrCodeImg,
   qrPlaceholder,
@@ -429,6 +430,9 @@ export async function fetchServerInfo() {
     setLocalIp(data.ips.find(ip => ip !== '127.0.0.1' && ip !== 'localhost') || 'localhost');
     setPort(data.port);
     localIpDisplay.textContent = appState.localIp;
+    if (navDeviceIp) {
+      navDeviceIp.textContent = appState.localIp;
+    }
 
     const lanUrl = `http://${appState.localIp}:${appState.port}/#${appState.roomId}`;
     lanUrlInput.value = lanUrl;
@@ -441,6 +445,9 @@ export async function fetchServerInfo() {
   } catch (error) {
     console.error('Failed to get server info:', error);
     localIpDisplay.textContent = '无法获取';
+    if (navDeviceIp) {
+      navDeviceIp.textContent = '无法获取';
+    }
     const fallbackUrl = `${window.location.origin}/#${appState.roomId}`;
     lanUrlInput.value = fallbackUrl;
 

@@ -11,6 +11,7 @@ import {
   mobileClearBtn,
   mobileInfoBtn,
   newRoomBtn,
+  navRail,
   sendBtn,
   sidebar,
   textInput
@@ -124,19 +125,30 @@ export function initEventListeners() {
     mobileInfoBtn.addEventListener('click', event => {
       event.stopPropagation();
       sidebar.classList.toggle('mobile-active');
+      if (navRail) {
+        navRail.classList.toggle('mobile-active');
+      }
     });
   }
 
   if (closeSidebarBtn && sidebar) {
     closeSidebarBtn.addEventListener('click', () => {
       sidebar.classList.remove('mobile-active');
+      if (navRail) {
+        navRail.classList.remove('mobile-active');
+      }
     });
   }
 
   document.addEventListener('click', event => {
-    if (sidebar && sidebar.classList.contains('mobile-active')) {
-      if (!sidebar.contains(event.target) && mobileInfoBtn && !mobileInfoBtn.contains(event.target)) {
+    if ((sidebar && sidebar.classList.contains('mobile-active')) || (navRail && navRail.classList.contains('mobile-active'))) {
+      const clickInsideNavRail = navRail && navRail.contains(event.target);
+      const clickInsideSidebar = sidebar && sidebar.contains(event.target);
+      if (!clickInsideSidebar && !clickInsideNavRail && mobileInfoBtn && !mobileInfoBtn.contains(event.target)) {
         sidebar.classList.remove('mobile-active');
+        if (navRail) {
+          navRail.classList.remove('mobile-active');
+        }
       }
     }
   });

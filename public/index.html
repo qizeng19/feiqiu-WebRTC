@@ -2,13 +2,13 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <title>飞秋 WebRTC - 局域网即时文本传输</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>飞秋 - 局域网即时文本传输</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Google Fonts: Inter -->
+  <!-- Google Fonts: Plus Jakarta Sans -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <!-- Lucide Icons (CDN) for clean modern UI icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -18,11 +18,10 @@
   <div class="bg-glow blob-2"></div>
 
   <div class="app-container">
-    <!-- Header -->
     <header class="app-header">
       <div class="logo-area">
         <i data-lucide="zap" class="logo-icon"></i>
-        <h1>飞秋 WebRTC <span>LAN Share</span></h1>
+        <h1>飞秋</h1>
       </div>
       <div class="status-container">
         <span class="status-indicator disconnected" id="connection-status">
@@ -30,6 +29,9 @@
           <span class="status-text">未连接</span>
         </span>
         <div class="header-actions">
+          <button class="icon-btn desktop-only-btn subtle" title="界面设置">
+            <i data-lucide="settings-2"></i>
+          </button>
           <button id="mobile-clear-btn" class="btn text-btn mobile-only-btn" title="清空记录">
             <i data-lucide="trash-2"></i>
             <span>清空</span>
@@ -43,69 +45,16 @@
     </header>
 
     <div class="main-layout">
-      <!-- Sidebar / Info Panel -->
-      <aside class="sidebar card">
-        <div class="sidebar-mobile-header mobile-only-btn">
-          <div class="sidebar-mobile-title">
-            <i data-lucide="qr-code"></i>
-            <span>房间二维码与设置</span>
-          </div>
-          <button id="close-sidebar-btn" class="icon-btn" title="关闭">
-            <i data-lucide="x"></i>
-          </button>
-        </div>
-        <div class="section-title">
-          <i data-lucide="share-2"></i>
-          <h2>快速连接其他电脑</h2>
-        </div>
-        <p class="description">在局域网内的其他电脑或手机上扫码，或者打开以下链接即可自动加入相同房间互发文本。</p>
-
-        <!-- Connection Details -->
-        <div class="qr-container">
-          <img id="qr-code-img" src="" alt="连接二维码" style="display: none;">
-          <div id="qr-placeholder" class="qr-placeholder">
-            <div class="spinner"></div>
-            <span>生成二维码中...</span>
-          </div>
+      <aside class="nav-rail card device-panel">
+        <div class="section-title panel-title">
+          <i data-lucide="shield"></i>
+          <h2>设备管理</h2>
         </div>
 
-        <div class="link-copier">
-          <label for="lan-url">局域网访问地址</label>
-          <div class="input-group">
-            <input type="text" id="lan-url" readonly value="获取中...">
-            <button id="copy-url-btn" class="icon-btn" title="复制链接">
-              <i data-lucide="copy"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="room-info">
-          <div class="info-row">
-            <span class="label">我的设备号:</span>
-            <span class="value code-font" id="my-peer-id-display">获取中...</span>
-          </div>
-          <div class="info-row">
-            <span class="label">当前房间:</span>
-            <span class="value code-font" id="room-id-display">default</span>
-          </div>
-          <div class="info-row">
-            <span class="label">本地 IP:</span>
-            <span class="value code-font" id="local-ip-display">-</span>
-          </div>
-          <div class="info-row">
-            <span class="label">连接数:</span>
-            <span class="value font-bold" id="peer-count">0 个设备</span>
-          </div>
-        </div>
-
-        <div class="moderation-panel">
-          <div class="section-title">
-            <i data-lucide="shield"></i>
-            <h2>房间管理</h2>
-          </div>
+        <section class="moderation-panel nav-moderation-panel">
           <div class="moderation-summary">
             <span class="role-badge" id="room-role-badge">普通成员</span>
-            <p id="room-role-hint">首个进入房间的设备会自动成为房主，可管理其他成员。</p>
+            <p id="room-role-hint" hidden></p>
           </div>
 
           <div class="moderation-group">
@@ -121,7 +70,78 @@
               <div class="member-empty">暂无屏蔽成员</div>
             </div>
           </div>
+        </section>
+      </aside>
+
+      <aside class="sidebar card">
+        <div class="sidebar-mobile-header mobile-only-btn">
+          <div class="sidebar-mobile-title">
+            <i data-lucide="qr-code"></i>
+            <span>连接信息与管理</span>
+          </div>
+          <button id="close-sidebar-btn" class="icon-btn" title="关闭">
+            <i data-lucide="x"></i>
+          </button>
         </div>
+
+        <section class="info-card hero-card">
+          <div class="section-title compact">
+            <h2>连接信息</h2>
+          </div>
+
+          <div class="identity-row">
+            <div class="identity-main">
+              <div class="identity-icon">
+                <i data-lucide="monitor"></i>
+              </div>
+              <div>
+                <div class="identity-title"><span id="my-peer-id-display">获取中...</span> <span class="identity-note">(本机)</span></div>
+                <div class="identity-ip-line">
+                  <span id="local-ip-display">-</span>
+                </div>
+              </div>
+            </div>
+            <div class="online-pill">
+              <span class="dot"></span>
+              <span>在线</span>
+            </div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-item">
+              <div class="stat-value" id="peer-count">0 个设备</div>
+              <div class="stat-label">已连接设备</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value code-font" id="room-id-display">default</div>
+              <div class="stat-label">当前房间</div>
+            </div>
+          </div>
+        </section>
+
+        <section class="info-card nearby-card">
+          <div class="section-title compact">
+            <h2>快速连接</h2>
+          </div>
+
+          <div class="qr-container">
+            <img id="qr-code-img" src="" alt="连接二维码" style="display: none;">
+            <div id="qr-placeholder" class="qr-placeholder">
+              <div class="spinner"></div>
+              <span>生成二维码中...</span>
+            </div>
+          </div>
+
+          <div class="link-copier">
+            <label for="lan-url">局域网访问地址</label>
+            <div class="input-group">
+              <input type="text" id="lan-url" readonly value="获取中...">
+              <button id="copy-url-btn" class="icon-btn" title="复制链接">
+                <i data-lucide="copy"></i>
+              </button>
+            </div>
+          </div>
+        </section>
 
         <div class="room-actions">
           <button id="new-room-btn" class="btn secondary">
@@ -129,26 +149,15 @@
             新建独立房间
           </button>
         </div>
-
-        <!-- File sharing info -->
-        <div class="teaser-card">
-          <div class="teaser-icon">
-            <i data-lucide="check-circle-2"></i>
-          </div>
-          <div class="teaser-text">
-            <h3>文件点对点传输已启用</h3>
-            <p>点击输入框旁的附件按钮，或者直接将文件拖拽到聊天区域，即可通过 WebRTC 局域网直传任何文件（TXT, APK 等）。</p>
-          </div>
-        </div>
       </aside>
 
-      <!-- Main Transfer Panel -->
       <main class="chat-panel card">
-        <!-- Panel Header -->
         <div class="chat-header">
-          <div class="chat-title">
-            <i data-lucide="message-square-text"></i>
-            <h2>局域网文本与文件剪贴板</h2>
+          <div class="chat-heading-group">
+            <div class="chat-title">
+              <i data-lucide="message-square-quote"></i>
+              <h2>局域网文本与文件白板</h2>
+            </div>
           </div>
           <div class="chat-actions">
             <button id="clear-chat-btn" class="btn text-btn" title="清空记录">
@@ -158,29 +167,27 @@
           </div>
         </div>
 
-        <!-- Messages List -->
         <div class="messages-container" id="messages-list">
           <div class="system-message">
             <p>等待其他设备加入... 打开左侧链接或二维码以建立 WebRTC 连接。</p>
           </div>
         </div>
 
-        <!-- Input Area -->
         <div class="input-panel">
           <div class="input-wrapper">
-            <textarea id="text-input" placeholder="输入或粘贴文本，或拖放文件到此处... 按 Enter 发送" rows="3"></textarea>
+            <button id="attach-btn" class="icon-btn input-attach-btn" title="选择文件">
+              <i data-lucide="paperclip"></i>
+            </button>
+            <textarea id="text-input" placeholder="输入消息或拖拽文件到这里..." rows="3"></textarea>
           </div>
           <div class="input-controls">
-            <div style="display: flex; align-items: center; gap: 12px;">
+            <div class="input-meta-group">
               <input type="file" id="file-input" style="display: none;">
-              <button id="attach-btn" class="icon-btn" title="选择文件">
-                <i data-lucide="paperclip"></i>
-              </button>
               <div class="char-count" id="char-count">0 字符</div>
+              <div class="desktop-input-hint">Shift + Enter 换行</div>
             </div>
             <button id="send-btn" class="btn primary" disabled>
-              <span>发送文本</span>
-              <i data-lucide="send"></i>
+              <i data-lucide="send-horizontal"></i>
             </button>
           </div>
         </div>
