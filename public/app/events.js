@@ -25,6 +25,7 @@ import {
 import { handleFileSelect } from './file-transfer.js';
 import { appendMessage, clearChatHistory, copyToClipboard, showToast } from './ui.js';
 import { generateRandomRoomId } from './utils.js';
+import { checkAllPeersHealth } from './webrtc.js';
 
 function sendMessage() {
   const text = textInput.value.trim();
@@ -224,5 +225,18 @@ export function initEventListeners() {
 
   document.addEventListener('gesturestart', event => {
     event.preventDefault();
+  });
+
+  // 手机解锁/切回前台或标签页激活时，主动检测健康状况并自愈
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      console.log('[Visibility] 页面切回前台，检查并唤醒 WebRTC P2P 连接...');
+      checkAllPeersHealth();
+    }
+  });
+
+  window.addEventListener('online', () => {
+    console.log('[Network] 网络恢复在线，检查并唤醒 WebRTC P2P 连接...');
+    checkAllPeersHealth();
   });
 }

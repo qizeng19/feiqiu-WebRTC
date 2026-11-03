@@ -9,7 +9,9 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: '*',
-  }
+  },
+  pingInterval: 10000,
+  pingTimeout: 30000
 });
 
 const PORT = process.env.PORT || 3004;
